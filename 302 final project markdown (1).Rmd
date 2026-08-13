@@ -1,0 +1,733 @@
+---
+title: "STA302 Group Project Final Markdown File"
+author: "Callum Lang, Khilna Poojari, San Singh, and Pavritha Venkitaraman"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This Markdown file demonstrates the process used to clean and subset the data, 
+produce a summary table of the variables in the model, fit the model, and
+conduct the residual analysis for checking the model's assumptions for the
+proposal and final parts of the project.
+
+# Project Proposal
+## Data Cleaning and Subsetting
+The `tidyverse`, `readxl`, and `flextable` libraries are loaded to read the car
+insurance data and store it as a data frame object.
+``` {r message = FALSE}
+library(tidyverse)
+library(readxl)
+library(flextable)
+cid <- read.csv("car_insurance_claim.csv")
+```
+
+We begin by converting the columns expressing dollar amounts in character type
+to numeric.
+```{r message = FALSE}
+cid$INCOME <- as.numeric(gsub("[//$,]", "", cid$INCOME))
+cid$BLUEBOOK <- as.numeric(gsub("[//$,]", "", cid$BLUEBOOK))
+cid$CLM_AMT <- as.numeric(gsub("[//$,]", "", cid$CLM_AMT))
+```
+
+We then create a new data frame object with the predictor and response variables
+relevant to our model, starting with the response (claim_amount), followed by
+the numerical and then categorical predictors.
+```{r message = FALSE}
+cidf <- data.frame(claim_amount = cid$CLM_AMT, age = cid$AGE, income = cid$INCOME,
+                   car_age = cid$CAR_AGE, bluebook = cid$BLUEBOOK,
+                   mvr_points = cid$MVR_PTS, car_type = cid$CAR_TYPE)
+```
+
+We then clean the data by removing all rows that have at least one missing
+value, rows with nonsensical values (such as a negative age), and $0 claim 
+amounts. This reduced our number of observations from 10,302 to 2,438. 
+Additionally, some levels of car_type had a "z_" prefix, which were removed for
+improved readability.
+```{r message = FALSE}
+cidf <- na.omit(cidf)
+cidf <- cidf[cidf$car_age >= 0, ]
+cidf <- cidf[cidf$claim_amount != 0, ]
+cidf$car_type <- as.factor(gsub("z_", "", cidf$car_type))
+```
+
+Finally, the cleaned data is exported to a csv file called
+`car_insurance_claim_cleaned.csv`.
+```{r message = FALSE}
+write.csv(cidf, "car_insurance_claim_cleaned.csv", row.names = FALSE)
+```
+
+## Summary Table for the Variables in the Model
+We construct a table by creating a data frame object which provides the
+description, type, mean, median, minimum, maximum, standard deviation, and a
+brief written description of the distribution of each variable used in the model.
+
+In order to create a written description of the distribution of each variable in
+the model, we create a histogram for each variable and then visually examine.
+```{r}
+par(mfrow = c(3,2))
+hist(cidf$age)
+hist(cidf$income)
+hist(cidf$car_age)
+hist(cidf$bluebook)
+hist(cidf$mvr_points)
+hist(cidf$claim_amount)
+```
+
+```{r}
+# construct a data frame object to hold the table's contents
+summary_table <- data.frame(
+  Variable = c("age", "income", "car_age", "bluebook", "mvr_points", "car_type",
+               "claim_amount"),
+  Description = c("Age of the driver in years.", 
+                  "Annual income of the driver in dollars.", 
+                  "Age of the car since produced in years.",
+                  "Estimated value of the vehicle in dollars.",
+                  "Motor Vehicle Record Points.", "Type of vehicle.",
+                  "Amount paid out for the insurance claim."),
+  Type = c("Numerical Predictor", "Numerical Predictor", "Numerical Predictor",
+           "Numerical Predictor", "Numerical Predictor", 
+           "Categorical Predictor", "Numerical Response"),
+  Mean = c(round(mean(cidf$age), digits = 4), 
+           round(mean(cidf$income), digits = 4), 
+           round(mean(cidf$car_age), digits = 4),
+           round(mean(cidf$bluebook), digits = 4), 
+           round(mean(cidf$mvr_points), digits = 4),
+           "N/A", round(mean(cidf$claim_amount), digits = 4)),
+  Median = c(median(cidf$age), median(cidf$income), median(cidf$car_age),
+             median(cidf$bluebook), median(cidf$mvr_points),
+             "N/A", median(cidf$claim_amount)),
+  Min = c(min(cidf$age), min(cidf$income), min(cidf$car_age),
+              min(cidf$bluebook), min(cidf$mvr_points), "N/A",
+              min(cidf$claim_amount)),
+  Max = c(max(cidf$age), max(cidf$income), max(cidf$car_age),
+              max(cidf$bluebook), max(cidf$mvr_points), "N/A",
+              max(cidf$claim_amount)),
+  Std_Dev = c(round(sd(cidf$age), digits = 4),
+                         round(sd(cidf$income), digits = 4),
+                         round(sd(cidf$car_age), digits = 4),
+                         round(sd(cidf$bluebook), digits = 4),
+                         round(sd(cidf$mvr_points), digits = 4), "N/A",
+                         round(sd(cidf$claim_amount), digits = 4)),
+  Distribution = c("Fairly normal, no skews or outliers.", "Heavily right-skewed
+                   with outliers around $300,000.", "Histogram is right-skewed,
+                   with a high number of observations in the 0-2.5 year bin,
+                   followed by a low number of observations in the 2.5-5 year
+                   bin.", "Heavily right-skewed.", "Heavily right-skewed with
+                   roughly half the observations in the 0-1 bin.", "Summary of
+                   counts: Minivan: 411, Panel Truck: 205, Pickup: 499,
+                   Sports Car: 355, SUV: 749, Van: 220", "Very right-skewed, 
+                   with the majority of observations lying in the 
+                   $0 - $10,000 bin and outliers at $123,247, $107,586, 
+                   $85,524, and $78,874."))
+```
+
+The data frame object is then converted into a flextable object so that the
+width, font style, font size, font bolding, padding, and alignment can be
+adjusted to make the table more readable.
+```{r message = FALSE}
+# convert data frame object into a flextable object
+ft <- flextable(summary_table)
+
+#adjust appearance of flextable object
+ft <- set_table_properties(ft, layout = "autofit", width = 1)
+ft <- font(ft, fontname = "Arial", part = "all")
+ft <- fontsize(ft, size = 9, part = "all")
+ft <- bold(ft, part = "header")
+ft <- padding(ft, padding = 2, part = "all")
+ft <- align(ft, align = "left", part = "all")
+```
+
+These adjustments result in the final output:
+```{r echo = FALSE}
+ft
+```
+
+We then fit a linear model with these variables.
+
+## Model Fitting and Checking of Assumptions
+We first construct a linear model from the cleaned data by relating our response
+(claim_amount) to our predictors (age, income, car_age, bluebook, mvr_points,
+and car_type) with the lm function. We then examine the model's Residual vs
+Fitted plot and Q-Q plot.
+```{r}
+# construct linear model
+linear_model <- lm(claim_amount ~ age + income + car_age + bluebook +
+                     mvr_points + car_type, data = cidf)
+# create the residuals vs fitted values plot and Q-Q plot side-by-side
+par(mfrow = c(1,2))
+plot(linear_model, which = 1)
+plot(linear_model, which = 2)
+```
+
+The model does not yield satisfactory results because it violates the
+linearity assumption and constant variance assumption, which is observed by
+the residual vs fitted plot having a non-constant vertical spread and a mean
+that decreases as fitted values increase. Additionally, the normality of errors
+assumption is violated since the standardized residuals of the model
+significantly deviate from the larger theoretical quantiles.
+
+In search of better results, we attempt a log transformation on the response
+variable, again using the lm function, and then perform the same plots as before
+to compare results.
+```{r}
+# construct linear model with log response variable
+log_linear_model <- lm(log(claim_amount) ~  age + income + car_age + bluebook +
+                        mvr_points + car_type, data = cidf)
+# create the residuals vs fitted values plot and Q-Q plot side-by-side
+par(mfrow = c(1,2))
+plot(log_linear_model, which = 1)
+plot(log_linear_model, which = 2)
+```
+
+The log transformation shows improvements over the original linear model. The
+residuals vs fitted plot is closer to a null plot and has a less negative mean
+for larger fitted values, while the Q-Q plot has standardized residuals that are
+overall closer to their corresponding theoretical quantile. However, still none
+of these characteristics of the plots are well-behaved enough for any of our
+model's assumptions to hold.
+
+# Final Project
+## Data Cleaning and Subsetting
+Similar to the proposal project, we begin by loading `tidyverse`, `readxl`, 
+and `flextable`, now along with `knitr`, `kableExtra`, and `car`, and store the
+original `.csv` file into an object called `cid`.
+```{r message = FALSE}
+library(tidyverse)
+library(readxl)
+library(knitr)
+library(kableExtra)
+library(car)
+cid <- read.csv("car_insurance_claim.csv")
+```
+
+We begin by converting all the columns in the data set expressing dollar amounts in character type to numeric.
+```{r}
+cid$INCOME <- as.numeric(gsub("[//$,]", "", cid$INCOME))
+cid$BLUEBOOK <- as.numeric(gsub("[//$,]", "", cid$BLUEBOOK))
+cid$CLM_AMT <- as.numeric(gsub("[//$,]", "", cid$CLM_AMT))
+cid$HOME_VAL <- as.numeric(gsub("[//$,]", "", cid$HOME_VAL))
+cid$OLDCLAIM <- as.numeric(gsub("[//$,]", "", cid$OLDCLAIM))
+```
+
+We then create a new, bigger data frame object than the one used in the project
+proposal that contains all the predictors and our response variable `claim_amount`,
+except for `ID` because no statistical information can be derived from it, and 
+`BIRTHDAY`, because we already have age as a predictor. The data frame begins with
+the response in the first column, followed by all the predictors ordered as they
+appear in the original `.csv` file.
+```{r}
+cidf_big <- data.frame(claim_amount = cid$CLM_AMT, age = cid$AGE,
+                       kids_driven = cid$KIDSDRIV,homekids = cid$HOMEKIDS,
+                       years_on_job = cid$YOJ, income = cid$INCOME,
+                       parent = cid$PARENT1, home_value = cid$HOME_VAL,
+                       marriage_status = cid$MSTATUS, gender = cid$GENDER,
+                       education = cid$EDUCATION, occupation = cid$OCCUPATION,
+                       travel_time = cid$TRAVTIME, car_use = cid$CAR_USE,
+                       bluebook = cid$BLUEBOOK, total_insurable_value = cid$TIF,
+                       car_type = cid$CAR_TYPE, red_car = cid$RED_CAR,
+                       old_claim = cid$OLDCLAIM, claim_frequency = cid$CLM_FREQ,
+                       revoked = cid$REVOKED, mvr_points = cid$MVR_PTS,
+                       car_age = cid$CAR_AGE, claim_flag = cid$CLAIM_FLAG,
+                       urbanicity = cid$URBANICITY)
+```
+
+We then clean the data by removing all rows that have at least one missing
+value, rows with nonsensical values (such as a negative age), and $0 claim 
+amounts. This reduced our number of observations from 10,304 to 2,188. 
+
+Additionally, many levels of some categorical variables contained "z_" prefixes,
+which were removed for improved readability.
+```{r}
+cidf_big <- na.omit(cidf_big)
+cidf_big <- cidf_big[cidf_big$car_age >= 0, ]
+cidf_big <- cidf_big[cidf_big$claim_amount != 0, ]
+
+# remove "z_" prefixes from various categories for improved readability
+cidf_big$marriage_status <- as.factor(gsub("z_", "", cidf_big$marriage_status))
+cidf_big$education <- as.factor(gsub("z_", "", cidf_big$education))
+cidf_big$occupation <- as.factor(gsub("z_", "", cidf_big$occupation))
+cidf_big$car_type <- as.factor(gsub("z_", "", cidf_big$car_type))
+cidf_big$parent <- as.factor(gsub("z_", "", cidf_big$parent))
+cidf_big$car_use <- as.factor(gsub("z_", "", cidf_big$car_use))
+cidf_big$urbanicity <- as.factor(gsub("z_", "", cidf_big$urbanicity))
+cidf_big$gender <- as.factor(gsub("z_", "", cidf_big$gender))
+```
+
+Finally, the cleaned data is exported to a `.csv` file called `car_insurance_claim_cleaned_v2.csv`.
+```{r}
+write.csv(cidf_big, "car_insurance_claim_cleaned_v2.csv", row.names = FALSE)
+```
+## Model Selection Process
+### Transformation Selection
+Prior to revising the initial model further, we fit the initial model to the new,
+revised data set so we can make more direct comparisons between the initial model
+and any other transformed models on the new data set. 
+```{r}
+log_linear_model_new <- lm(log(claim_amount) ~ age + income + car_age +
+                             bluebook + mvr_points + car_type, data = cidf_big)
+
+```
+
+In search of a more satisfactory transformation, we attempt a 10th root
+transformation on the response instead of a log transformation.
+```{r}
+log_lm_10root <-lm(I(claim_amount^0.1) ~ age + income + car_age + bluebook + mvr_points +
+           car_type, data = cidf_big)
+```
+
+We then plot these two models to compare results.
+```{r}
+par(mfrow = c(2, 2))
+# first row: residuals vs. fitted plots
+plot(log_linear_model_new, which = 1)
+plot(log_lm_10root, which = 1)
+# second row: Q-Q plots
+plot(log_linear_model_new, which = 2)
+plot(log_lm_10root, which = 2)
+```
+
+We then compare their `summary()` calls, alongside their `AIC` and `BIC` scores
+```{r}
+summary(log_linear_model_new)
+summary(log_lm_10root)
+AIC(log_linear_model_new)
+BIC(log_linear_model_new)
+AIC(log_lm_10root)
+BIC(log_lm_10root)
+```
+
+We find that the 10th root transformation leads to a model with a similar residuals
+vs. fitted values plot, while improving the left tail of the QQ plot (residuals
+are less extreme), while the right tail is slightly heavier. Further, the 10th
+root's model has a higher adjusted R squared, and vastly lower AIC and BIC scores
+in comparison to the log model. As a result, we chose to use the 10th root
+transformation on the response for our revised model.
+
+### Variable Selection
+We then reconsidered which variables to use in the revised model. Given the large
+number of predictors in the data set, we used three automated methods (Backward
+Elimination, Forward Selection, and Stepwise Regression) with AIC and BIC as the 
+information criterion. We then compared each model's adjusted R squared, AIC,
+and BIC scores as criteria, and chose the model that performed best overall.
+
+We begin by building a linear model that uses all the predictors in the data set,
+`full_linear_model`, to use for backward elimination. 
+
+```{r}
+full_linear_model <- lm(I(claim_amount^0.1) ~ age + kids_driven + homekids + 
+                          years_on_job + income + parent + home_value +
+                          marriage_status + gender + education + occupation +
+                          travel_time + car_use + bluebook + total_insurable_value +
+                          car_type + red_car + old_claim + claim_frequency + revoked +
+                          mvr_points + car_age + urbanicity,
+                        data = cidf_big)
+```
+
+We then use the `step` function to perform backward elimination using AIC and BIC
+as the information criterion.
+```{r results='hide'}
+# build model with AIC as criteria
+aic_back_model <- step(full_linear_model, direction = "backward", k = 2)
+
+summary(aic_back_model)
+AIC(aic_back_model)
+BIC(aic_back_model)
+
+# build model with BIC as criteria
+bic_back_model <- step(full_linear_model, direction = "backward", k = log(nrow(cidf_big)))
+```
+
+We then build a null model to use with forward elimination and stepwise regression.
+```{r}
+null_model <- lm(I(claim_amount^0.1) ~ 1, data = cidf_big)
+```
+
+We then use the `step` function to perform forward selection using AIC and BIC
+as the information criterion.
+```{r results='hide'}
+# build model with AIC as criteria
+aic_for_model <- step(null_model,
+                      scope = list(lower = null_model, upper = full_linear_model),
+                      direction = "forward", k = 2)
+
+# build model with BIC as criteria
+bic_for_model <- step(null_model,
+                      scope = list(lower = null_model, upper = full_linear_model),
+                      direction = "forward", k = log(nrow(cidf_big)))
+```
+
+We then use the `step` function to perform stepwise regression using AIC and BIC
+as the information criterion.
+```{r results='hide'}
+# build model with AIC as criteria
+aic_stepwise_model <- step(null_model,
+                           scope = list(lower = null_model, upper = full_linear_model),
+                           direction = "both", k = 2)
+
+# build model with BIC as criteria
+bic_stepwise_model <- step(null_model,
+                           scope = list(lower = null_model, upper = full_linear_model),
+                           direction = "both", k = log(nrow(cidf_big)))
+```
+
+We then compare the adjusted R squared, AIC, and BIC of these models.
+```{r echo = FALSE}
+comparison_table <- data.frame(
+  Model = c("Backward AIC", "Backward BIC", "Forward AIC", "Forward BIC",
+            "Stepwise AIC", "Stepwise BIC"),
+  Adjusted_R2 = c(summary(aic_back_model)$adj.r.squared, 
+                   summary(bic_back_model)$adj.r.squared,
+                   summary(aic_for_model)$adj.r.squared,
+                   summary(bic_for_model)$adj.r.squared,
+                   summary(aic_stepwise_model)$adj.r.squared,
+                   summary(bic_stepwise_model)$adj.r.squared),
+  AIC = c(AIC(aic_back_model), AIC(bic_back_model), AIC(aic_for_model), 
+          AIC(bic_for_model), AIC(aic_stepwise_model), AIC(bic_stepwise_model)),
+  BIC = c(BIC(aic_back_model), BIC(bic_back_model), BIC(aic_for_model), 
+          BIC(bic_for_model), BIC(aic_stepwise_model), BIC(bic_stepwise_model))
+)
+comparison_table
+```
+
+It is observed that the forward selection AIC model and the stepwise regression
+AIC model have the same scores, and the best overall scores. They are in fact the
+same model, as shown by their summary outputs below. We will refer to this model
+as the forward AIC model from here onwards.
+```{r}
+summary(aic_for_model)
+summary(aic_stepwise_model)
+```
+
+To check for any missing variables that the forward selection process may have
+missed, we conduct an ANOVA test between the forward AIC model and the full model.
+```{R}
+# ANOVA between revised and og model to show it is better
+anova(aic_for_model, full_linear_model)
+```
+
+Since the p-value (Pr(>F)) is greater than 0.05, we fail to reject the null, and
+therefore there is a lack of evidence that all the variables omitted from the
+forward AIC model collectively explain additional variation in the response beyond
+the predictors already present.
+
+## Gathering of Statistics and Figures for Analysis
+In addition to R squared, AIC and BIC, we gather the Residual Standard Error,
+adjusted R squared, F-statistic and P-value for the model to present in the report.
+```{r}
+stat_table <- data.frame(Statistic = c("Residual Standard Error", "R Squared",
+                                       "Adjusted R Squared", "AIC", "BIC", 
+                                       "F-Statistic", "P-value"),
+                         Result = c(summary(aic_for_model)$sigma,
+                                    summary(aic_for_model)$r.squared,
+                                    summary(aic_for_model)$adj.r.squared,
+                                    AIC(aic_for_model), BIC(aic_for_model),
+                                        summary(aic_for_model)$fstatistic[1],
+                                        with(as.list(summary(aic_for_model)$fstatistic),
+                                             pf(value, numdf, dendf, lower.tail = FALSE)))
+  
+)
+```
+
+```{r echo=FALSE}
+stat_table
+```
+
+We then check for multicollinearity in the predictors.
+```{r}
+vif(aic_for_model)
+```
+
+Since the variance inflation factors are very close to 1, we conclude that there
+is little to no multicollinearity amongst the predictors.
+
+We then create the residuals vs. fitted values and Q-Q plots to determine if the
+forward AIC model follows the linear model assumptions.
+```{r}
+# residuals vs fitted and Q-Q plot
+# arrange plots in a 1 x 2 matrix
+par(mfrow = c(1, 2))
+# Residuals vs Fitted plot
+plot(aic_for_model, which = 1)
+# QQ plot
+plot(aic_for_model, which = 2)
+```
+
+In the revised model’s residuals vs fitted values plot, we observe an uneven
+dispersion of points, a mean that decreases from zero, and the spread of the
+positive and negative residuals varying differently as fitted values increase. 
+Therefore, we conclude that the linearity and homoskedasticity assumptions are 
+violated. Further, we observe that the Q-Q plot shows a heavy left tail and very
+heavy right tail in the distribution of the standardized residuals, indicating
+that the model violates the normality of errors assumption.
+
+We then create a summary of the variables in the model for use in the report. 
+The descriptions of the variable distributions come from the following plots
+(and table for `marriage_status`, since it is categorical):
+```{r echo = FALSE}
+# plot and make distribution descriptions for each variable in the model
+par(mfrow = c(2, 2))
+hist(cidf_big$bluebook)
+# result: "Very right-skewed with centre in the $5000 - $10,000 bin."
+
+hist(cidf_big$mvr_points)
+# result: "Extremely right-skewed with roughly half the observations in the 0-1 bin."
+
+hist(cidf_big$claim_amount)
+# result: "Very right-skewed, with the majority of observations lying in the 
+# $0 - $5,000 bin, with outliers at $85,524, $78,874, and $77,907."
+```
+
+```{r echo = FALSE}
+table(cidf_big$marriage_status)
+# "Count: No: 1111, Yes: 1077"
+```
+
+```{r}
+# Summary of Variables
+
+# Make a flextable with a description Mean, Median, SD, Max/min, and a
+# distribution description for each variable in cidf_big.
+revised_summary_table <- data.frame(
+  Variable = c("bluebook", "mvr_points", "marriage_status",
+               "claim_amount"),
+  Description = c("Estimated value of the vehicle in dollars.",
+                  "Motor Vehicle Record Points.", "Maritial status of the driver.",
+                  "Amount paid out for the insurance claim."),
+  Type = c("Numerical Predictor", "Numerical Predictor", "Categorical Predictor",
+           "Numerical Response"),
+  Mean = c(round(mean(cidf_big$bluebook), digits = 4), 
+           round(mean(cidf_big$mvr_points), digits = 4),
+           "N/A", round(mean(cidf_big$claim_amount), digits = 4)),
+  Median = c(median(cidf_big$bluebook), median(cidf_big$mvr_points),
+             "N/A", median(cidf_big$claim_amount)),
+  Min = c(min(cidf_big$bluebook), min(cidf_big$mvr_points), "N/A",
+          min(cidf_big$claim_amount)),
+  Max = c(max(cidf_big$bluebook), max(cidf_big$mvr_points), "N/A",
+          max(cidf_big$claim_amount)),
+  Std_Dev = c(round(sd(cidf_big$bluebook), digits = 4),
+              round(sd(cidf_big$mvr_points), digits = 4), "N/A",
+              round(sd(cidf_big$claim_amount), digits = 4)),
+  Distribution = c("Very right-skewed with centre in the $5000 - $10,000 bin.",
+                   "Extremely right-skewed with roughly half the observations in
+                   the 0-1 bin.", "Category Counts: No: 1111, Yes: 1077",
+                   "Very right-skewed, with the majority of observations lying
+                   in the $0 - $5,000 bin, with outliers at $85,524, $78,874,
+                   and $77,907."))
+
+```
+
+We then format the table to make it more presentable for the final report:
+```{r}
+rft <- flextable(revised_summary_table)
+rft <- set_table_properties(rft, layout = "autofit", width = 1)
+rft <- font(rft, fontname = "Arial", part = "all")
+rft <- fontsize(rft, size = 9, part = "all")
+rft <- bold(rft, part = "header")
+rft <- padding(rft, padding = 2, part = "all")
+rft <- align(rft, align = "left", part = "all")
+```
+
+```{r echo = FALSE}
+rft
+```
+
+## Treatment of Leverage points, Influential points, and Outliers
+We then search for leverage points, influential points, and outliers in the model.
+It should be noted that since the data set came with no additional information,
+we had to use our best judgment when interpreting what each variable measures
+based on their names. This is also applied to the levels of the categorical
+variables. Specifically, the `occupation` level which is blank was taken to mean
+unemployed, and any `income` reported is the income of their most recent job,
+should it be greater than zero. This decision was made to accommodate for 
+potential misconceptions we may have about what `occupation` and `income`
+represent as variables.
+
+Beginning with leverage points, we determine the cutoff value for high leverage 
+and count how many observations are high leverage.
+```{r}
+# leverage cutoff is > 2(p+1)/n:
+leverage_cutoff <- 2 * length(coef(aic_for_model)) / nobs(aic_for_model)
+
+# count how many high leverage points the model has
+sum(hatvalues(aic_for_model) > leverage_cutoff)
+```
+
+We then examine the residuals of the high leverage observations to determine how 
+many of them are bad leverage points, meaning they are high leverage and have a 
+standardized residual greater than 4 in magnitude.
+```{r}
+# get indexes of high leverage values in model
+high_lev_idx <- which(hatvalues(aic_for_model) > leverage_cutoff)
+
+# find how many high leverage observations have a large standardized residual
+sum(abs(rstandard(aic_for_model)[high_lev_idx]) > 4)
+```
+
+We thus conclude that the model has one bad leverage point. We examine the
+observation:
+```{r message = FALSE}
+# bad leverage point index
+bad_lev_pt <- which(abs(rstandard(aic_for_model)[high_lev_idx]) > 4)
+
+# create table
+kable(cidf_big[bad_lev_pt, ], format = "html") %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(
+    1:ncol(cidf_big[bad_lev_pt, ]),
+    extra_css = "min-width: 130px; padding-left: 15px; padding-right: 15px; white-space: nowrap;"
+  ) %>%
+  scroll_box(width = "100%", height = "140px")
+```
+
+It seems reasonable, and therefore its removal would be unjustified. We then 
+check the studentized residuals of the high leverage observations to see if any 
+of the points are outliers in the "studentized sense", meaning their
+residual is greater than 3 in magnitude.
+```{r}
+# Studentized residual cutoff is 
+sum(abs(rstudent(aic_for_model)[high_lev_idx]) > 3)
+```
+
+Thus we find that there are 6 observations. Inspecting them further:
+```{r}
+# indexes of the bad leverage points in the "studentized sense"
+bad_lev_pt_stud <-which(abs(rstudent(aic_for_model)[high_lev_idx]) > 3)
+
+# create table
+kable(cidf_big[bad_lev_pt_stud, ], format = "html") %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(
+    1:ncol(cidf_big[bad_lev_pt_stud, ]),
+    extra_css = "min-width: 130px; padding-left: 15px; padding-right: 15px; white-space: nowrap;"
+  ) %>%
+  scroll_box(width = "100%", height = "530px")
+```
+
+These observations are reasonable/plausible, and thus their exclusion cannot be 
+justified.
+
+As mentioned before, the model contains one bad leverage point. We now check how
+many other outliers are in the model, which are observations with a residual
+greater than 4 in magnitude.
+```{r}
+# Count how many outliers are present in the model
+sum(abs(rstandard(aic_for_model)) > 4)
+```
+
+Thus there are 6 outliers present. As established before, only one of these
+observations is high leverage. Nevertheless, we still inspect these 6 
+observations for any implausibility or abnormalities.
+```{r}
+# build index set of outlier points
+outlier_idx <- which(abs(rstandard(aic_for_model)) > 4)
+
+# create table of outlier observations
+kable(cidf_big[outlier_idx, ], format = "html") %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(
+    1:ncol(cidf_big[outlier_idx, ]),
+    extra_css = "min-width: 130px; padding-left: 15px; padding-right: 15px; white-space: nowrap;"
+  ) %>%
+  scroll_box(width = "100%", height = "530px")
+```
+
+These observations are somewhat plausible, and therefore their inclusion is 
+justified.
+
+We now turn to examining influential points in the model. This was accomplished 
+by examining the Cook's distance, DFFITS, and DFBETAS of all the points in the 
+model. We begin with Cook's distance by determining the cutoff value
+```{r}
+# Cook's distance cutoff for being influential: qf(0.5, p+1, n-p-1), where 
+# n = nobs(aic_for_model) = 2188, p = # variables = 3, therefore
+# p+1 = length(coef(aic_for_model)) = 4.
+cooks_cutoff <- qf(0.5, length(coef(aic_for_model)), nobs(aic_for_model) - length(coef(aic_for_model)))
+cooks_cutoff
+```
+
+Therefore if a point has a cook's distance greater than 0.8394342, then it is
+influential. We now see how many observations exceed this cutoff:
+```{r}
+sum(cooks.distance(aic_for_model) > cooks_cutoff)
+```
+
+Thus we have no observations that are influential based on the Cook's distance
+criteria. We now examine how many observations exceed the DFFITS cutoff
+```{r}
+# DFFITS cutoff is +- 2 * sqrt((p+1)/n) = 2 * sqrt(4/2188)
+dff_cutoff <- 2* sqrt(length(coef(aic_for_model))/nobs(aic_for_model))
+
+# count how many observations exceed the DFFITS cutoff
+sum(abs(dffits(aic_for_model)) > dff_cutoff)
+```
+
+Thus there are 132 observations that are influential based on DFFITS criteria.
+```{r}
+# Indexes of the observations that exceed the DFFITS cutoff
+dff_idx <- which(abs(dffits(aic_for_model)) > dff_cutoff)
+
+# Create table for high DFFITS observations
+kable(cidf_big[dff_idx, ], format = "html") %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(
+    1:ncol(cidf_big[dff_idx, ]),
+    extra_css = "min-width: 130px; padding-left: 15px; padding-right: 15px; white-space: nowrap;"
+  ) %>%
+  scroll_box(width = "100%", height = "530px")
+```
+
+Upon further examination, these points do not seem to be unrealistic
+observations, and therefore should be kept in the data set.
+
+We now look for observations that exceed the DFBETAS cutoff for at least one
+predictor coefficient.
+```{r}
+# DFFBETAS cutoff is +- 2 / sqrt(n) = 2/sqrt(2188) = 0.04275691
+dfb_cutoff <- 2/sqrt(nobs(aic_for_model))
+
+# count how many observations exceed the DFBETAS cutoff
+sum(apply(abs(dfbetas(aic_for_model)) > dfb_cutoff, 1, any))
+```
+
+Thus we have 285 observations that are influential based on DFBETAS criteria.
+```{r}
+# Get the indexes of the observations that exceed DFBETAS cutoff for at least
+# one coefficient
+dfb_cutoff_idx <- which(apply(abs(dfbetas(aic_for_model)) > dfb_cutoff, 1, any))
+
+# create table for high DFBETAS observations
+kable(cidf_big[dfb_cutoff_idx, ], format = "html") %>%
+  kable_styling(full_width = FALSE) %>%
+  column_spec(
+    1:ncol(cidf_big[dfb_cutoff_idx, ]),
+    extra_css = "min-width: 130px; padding-left: 15px; padding-right: 15px; white-space: nowrap;"
+  ) %>%
+  scroll_box(width = "100%", height = "500px")
+```
+
+Again these observations seem plausible, and thus their inclusion in the data
+set in warranted.
+
+We thereby arrive at the completed revised model.
+
+In addition to the `summary()` call on the forward AIC model above, 95%
+confidence intervals for each of the model's coefficients were constructed for 
+the "Final Model Inference and Results" section of the report:
+```{r}
+confint_table <- data.frame( Predictor = c("Intercept", "bluebook", "mvr_points",
+                                           "I(Yes)"),
+                             Lower = c(confint(aic_for_model)[1], 
+                                       confint(aic_for_model)[2],
+                                       confint(aic_for_model)[4],
+                                       confint(aic_for_model)[3]),
+                             Upper = c(confint(aic_for_model)[5],
+                                       confint(aic_for_model)[6],
+                                       confint(aic_for_model)[8],
+                                       confint(aic_for_model)[7])
+)
+confint_table
+```
+This completes the use of R in this project.
